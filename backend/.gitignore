@@ -1,0 +1,28 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv/
+
+# Uploads & Media Assets (if you want to keep user uploads out of git)
+/uploads/*
+!/uploads/.gitkeep
+
+# Environment variables & local settings
+.env
+*.db
+*.sqlite3
+
+# IDEs & Operating System files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
