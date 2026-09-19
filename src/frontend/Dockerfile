@@ -6,8 +6,9 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# Stage 2: Serve via Nginx
-FROM nginx:alpine
+# Stage 2: Serve via Nginx (Alpine-based, ultra-lightweight)
+FROM nginx:alpine-slim
+RUN rm -rf /usr/share/nginx/html/*
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

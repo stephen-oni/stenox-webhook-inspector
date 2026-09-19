@@ -13,7 +13,7 @@ output "internet_gateway_id" {
   value       = aws_internet_gateway.igw.id
 }
 
-# Public Subnets (ALB & NAT Gateways)
+# Public Subnets (NAT Gateways & Ingress NLB)
 output "public_subnet_1_id" {
   description = "The ID of Public Subnet 1"
   value       = aws_subnet.public_1.id
@@ -61,12 +61,7 @@ output "private_db_subnet_ids" {
   value       = [aws_subnet.private_db_1.id, aws_subnet.private_db_2.id]
 }
 
-
-output "alb_sg_id" {
-  description = "The ID of the Public ALB Security Group"
-  value       = aws_security_group.alb_sg.id
-}
-
+# Security Groups
 output "app_sg_id" {
   description = "The ID of the EKS Worker Node / App Security Group"
   value       = aws_security_group.app_sg.id
@@ -75,20 +70,4 @@ output "app_sg_id" {
 output "db_sg_id" {
   description = "The ID of the RDS Database Security Group"
   value       = aws_security_group.db_sg.id
-}
-
-
-output "alb_arn" {
-  description = "The ARN of the Application Load Balancer"
-  value       = aws_lb.api_alb.arn
-}
-
-output "alb_dns_name" {
-  description = "The public DNS name of the Application Load Balancer"
-  value       = aws_lb.api_alb.dns_name
-}
-
-output "alb_target_group_arn" {
-  description = "The ARN of the default ALB Target Group"
-  value       = aws_lb_target_group.api_tg.arn
 }

@@ -1,10 +1,10 @@
 import os
 import uuid
 import json
-import shutil
-from fastapi import FastAPI, Depends, HTTPException, status, Request, UploadFile, File
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+from fastapi import FastAPI, Depends, HTTPException, status, Request, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -15,15 +15,30 @@ from auth import get_password_hash, verify_password, create_access_token, get_cu
 from email_service import send_password_reset_email
 
 Base.metadata.create_all(bind=engine)
-os.makedirs("uploads", exist_ok=True)
+
+# S3 Configuration from Environment (populated by ExternalSecrets / SecretsManager)
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+AWS_S3_BUCKET = os.getenv("AWS_S3_BUCKET")
+
+# Boto3 uses IRSA credentials automatically via the EKS web identity token
+s3_client = boto3.client("s3", region_name=AWS_REGION)
 
 app = FastAPI(title="SteNox API")
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+# Dynamic CORS handling: supports wildcard or comma-separated lists from ConfigMap/Env
+raw_origins = os.getenv("CORS_ORIGINS", "*")
+if raw_origins.strip() == "*":
+    allow_origins = ["*"]
+    allow_credentials = False
+else:
+    allow_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    allow_credentials = True
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=allow_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -52,18 +67,25 @@ def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     access_token = create_access_token(data={"sub": str(user.id)})
     return {
         "token": access_token,
-        "user": {"id": user.id, "full_name": user.full_name, "email": user.email, "profile_picture_url": user.profile_picture_url, "endpoint_id": user.endpoint_id}
+        "user": {
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "profile_picture_url": user.profile_picture_url,
+            "endpoint_id": user.endpoint_id
+        }
     }
 
 @app.post("/api/auth/forgot-password")
-def forgot_password(req: ForgotPasswordRequest, db: Session = Depends(get_db)):
+def forgot_password(
+    req: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     user = db.query(User).filter(User.email == req.email).first()
     if user:
         token = create_password_reset_token(user.email)
-        try:
-            send_password_reset_email(user.email, token)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail="Failed to dispatch email")
+        background_tasks.add_task(send_password_reset_email, user.email, token)
     return {"message": "If an account exists, a reset link has been dispatched"}
 
 @app.post("/api/auth/reset-password")
@@ -111,17 +133,35 @@ async def update_profile_photo(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    if not AWS_S3_BUCKET:
+        raise HTTPException(status_code=500, detail="AWS_S3_BUCKET environment variable is not configured")
+
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in [".jpg", ".jpeg", ".png", ".webp"]:
         raise HTTPException(status_code=400, detail="Only JPG, PNG, or WEBP images allowed")
 
-    filename = f"avatar_{current_user.id}_{uuid.uuid4().hex[:8]}{file_ext}"
-    file_path = os.path.join("uploads", filename)
+    s3_key = f"avatars/{current_user.id}_{uuid.uuid4().hex[:8]}{file_ext}"
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    content_type_map = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp"
+    }
+    content_type = content_type_map.get(file_ext, "application/octet-stream")
 
-    photo_url = f"http://localhost:8000/uploads/{filename}"
+    try:
+        s3_client.upload_fileobj(
+            file.file,
+            AWS_S3_BUCKET,
+            s3_key,
+            ExtraArgs={"ContentType": content_type}
+        )
+    except (BotoCoreError, ClientError) as exc:
+        raise HTTPException(status_code=500, detail=f"S3 upload failed: {str(exc)}")
+
+    photo_url = f"https://{AWS_S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+
     current_user.profile_picture_url = photo_url
     db.commit()
     db.refresh(current_user)

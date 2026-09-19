@@ -43,3 +43,14 @@ variable "max_size" {
   type        = number
   default     = 3
 }
+
+variable "aws_region" {
+  description = "AWS region for Secrets Manager resource ARN resolution"
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "s3_bucket_arn" {
+  description = "ARN of the S3 media bucket for IRSA access policy"
+  type        = string
+}

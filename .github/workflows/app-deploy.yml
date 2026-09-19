@@ -1,0 +1,97 @@
+name: Application Build, Push & GitOps Sync
+
+on:
+  workflow_dispatch: # Enables the manual "Run workflow" button in GitHub Actions
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'k8s/**'
+      - '.github/workflows/app-deploy.yml'
+
+permissions:
+  id-token: write   # Required for AWS OIDC authentication
+  contents: write   # Required to commit the updated image tag back to Git
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ROLE_TO_ASSUME: arn:aws:iam://${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ecr-role
+  BACKEND_ECR_REPO: stenox-backend
+  FRONTEND_ECR_REPO: stenox-frontend
+
+jobs:
+  build-and-push:
+    name: Build & Push Images to ECR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Kustomize
+        uses: imranismail/setup-kustomize@v3
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # -------------------------------------------------------------
+      # Build & Push Backend (FastAPI)
+      # -------------------------------------------------------------
+      - name: Build & Push Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/backend
+          file: ./src/backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.BACKEND_ECR_REPO }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.BACKEND_ECR_REPO }}:latest
+
+      # -------------------------------------------------------------
+      # Build & Push Frontend (React/Vite)
+      # -------------------------------------------------------------
+      - name: Build & Push Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/frontend
+          file: ./src/frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.FRONTEND_ECR_REPO }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.FRONTEND_ECR_REPO }}:latest
+
+      # -------------------------------------------------------------
+      # GitOps Tag Bump (Kustomize)
+      # -------------------------------------------------------------
+      - name: Update Kustomize Manifests
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          cd k8s/dev
+          
+          # Sets the new image tags in kustomization.yaml
+          kustomize edit set image backend-image=${{ steps.login-ecr.outputs.registry }}/${{ env.BACKEND_ECR_REPO }}:${{ github.sha }}
+          kustomize edit set image frontend-image=${{ steps.login-ecr.outputs.registry }}/${{ env.FRONTEND_ECR_REPO }}:${{ github.sha }}
+
+          git add kustomization.yaml
+          
+          # Only commit if changes are present
+          if ! git diff --cached --quiet; then
+            git commit -m "ci(gitops): bump container images to ${{ github.sha }} [skip ci]"
+            git pull --rebase origin main
+            git push origin main
+          fi

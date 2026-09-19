@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stenox-frontend-deployment
+  namespace: dev
+  labels:
+    app: stenox-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stenox-frontend
+  template:
+    metadata:
+      labels:
+        app: stenox-frontend
+    spec:
+      containers:
+      - name: stenox-container
+        image: frontend-image
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "40m"
+            memory: "35Mi"
+          limits:
+            cpu: "120m"
+            memory: "80Mi"

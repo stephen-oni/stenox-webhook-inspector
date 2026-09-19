@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stenox-ingress
+  namespace: dev
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      # Route all traffic through the frontend reverse proxy
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: stenox-frontend-service
+            port:
+              number: 80
+
+
+# In the architecture, since the frontend container (Nginx) already handles reverse-proxying /api directly to http://backend-service:8000,
+# my Ingress only needs to route all incoming traffic directly to the frontend service, or handle backend paths without stripping /api.

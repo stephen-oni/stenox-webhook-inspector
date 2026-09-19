@@ -12,5 +12,10 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  build: {
+    sourcemap: false,       // Prevents large .map debug files from entering the build
+    minify: 'esbuild',      // Strips whitespace and comments
+    cssMinify: true         // Compresses CSS bundles
   }
 });

@@ -8,7 +8,6 @@ output "alb_dns_name" {
   value       = module.network.alb_dns_name
 }
 
-
 output "cluster_name" {
   description = "EKS Cluster Name"
   value       = module.eks.cluster_name
@@ -29,6 +28,10 @@ output "oidc_provider_arn" {
   value       = module.eks.oidc_provider_arn
 }
 
+output "backend_irsa_role_arn" {
+  description = "IAM Role ARN for stenox-backend-sa (IRSA)"
+  value       = module.eks.backend_irsa_role_arn
+}
 
 output "db_endpoint" {
   description = "Endpoint for connecting to MySQL"
@@ -40,8 +43,17 @@ output "db_address" {
   value       = module.database.db_address
 }
 
-
 output "ecr_repository_urls" {
   description = "Image push targets for GitHub Actions CI"
   value       = module.ecr.repository_urls
+}
+
+output "s3_bucket_name" {
+  description = "S3 bucket for media uploads"
+  value       = module.s3_media.bucket_name
+}
+
+output "s3_bucket_arn" {
+  description = "S3 bucket ARN"
+  value       = module.s3_media.bucket_arn
 }

@@ -1,32 +1,4 @@
-#provider.tf provisioning AWS provider and Terraform Cloud backend configuration
-terraform {
-  required_version = ">= 1.5.0"
-
-  cloud {
-    organization = "YOUR-TERRAFROM-ORGAN" #change this to your terraform cloud organization name
-
-    workspaces {
-      name = "YOUR-WORKSPACE-NAME"      #change this to your terraform cloud workspace name
-    }
-  }
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~> 4.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.aws_region
-}
-
-#network module for VPC, subnets, and security groups
+# Network module for VPC, subnets, and security groups
 module "network" {
   source = "./modules/network"
 
@@ -43,7 +15,19 @@ module "network" {
   private_db_subnet_cidr_2   = var.private_db_subnet_cidr_2
 }
 
-#eks module for EKS cluster and worker nodes
+# S3 media storage module
+module "s3_media" {
+  source             = "./modules/s3"
+  bucket_name_prefix = "stenox-media"
+  force_destroy      = true # Set to true for dev/test environments
+
+  tags = {
+    Environment = "dev"
+    Project     = "stenox"
+  }
+}
+
+# EKS module for cluster, worker nodes, and IRSA
 module "eks" {
   source = "./modules/eks"
 
@@ -57,10 +41,13 @@ module "eks" {
   min_size            = var.min_size
   max_size            = var.max_size
 
+  aws_region    = var.aws_region
+  s3_bucket_arn = module.s3_media.bucket_arn
+
   depends_on = [module.network]
 }
 
-#database module for RDS instance
+# Database module for RDS instance
 module "database" {
   source = "./modules/database"
 
@@ -74,7 +61,7 @@ module "database" {
   depends_on = [module.network]
 }
 
-#ecr module for ECR repositories
+# ECR module for container repositories
 module "ecr" {
   source = "./modules/ecr"
 

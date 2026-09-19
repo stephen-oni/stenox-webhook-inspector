@@ -1,4 +1,4 @@
-# iam role and policies for the EKS cluster control plane. 
+# IAM role and policies for the EKS cluster control plane. 
 resource "aws_iam_role" "cluster_role" {
   name = "${var.cluster_name}-cluster-role"
 
@@ -30,7 +30,7 @@ resource "aws_iam_role_policy_attachment" "cluster_AmazonEKSVPCResourceControlle
   role       = aws_iam_role.cluster_role.name
 }
 
-# my clauter that manages my workernodes
+# Cluster that manages worker nodes
 resource "aws_eks_cluster" "main" {
   name     = var.cluster_name
   role_arn = aws_iam_role.cluster_role.arn
@@ -53,8 +53,7 @@ resource "aws_eks_cluster" "main" {
   }
 }
 
-
-# role and policies for my managed worker nodes that will be created in the EKS cluster. This role allows the worker nodes to join the cluster.
+# Role and policies for managed worker nodes in the EKS cluster
 resource "aws_iam_role" "node_role" {
   name = "${var.cluster_name}-node-role"
 
@@ -94,7 +93,7 @@ resource "aws_iam_role_policy_attachment" "node_AmazonEC2ContainerRegistryReadOn
   role       = aws_iam_role.node_role.name
 }
 
-# proviosn of the worker nodes in the EKS cluster.
+# Provision of the worker nodes in the EKS cluster
 resource "aws_eks_node_group" "main_nodes" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${var.cluster_name}-node-group"
@@ -125,11 +124,7 @@ resource "aws_eks_node_group" "main_nodes" {
   }
 }
 
-
-# OIDC IDENTITY PROVIDER
-# we can attach the pods or nodes that has serviceaccountname in there spec. 
-#to read from my secret manager using serviceaccount kind file of like a role for the pods to assume. 
-# This is called IRSA (IAM Roles for Service Accounts). The OIDC provider is required for this.
+# OIDC Identity Provider for IAM Roles for Service Accounts (IRSA)
 data "tls_certificate" "cluster" {
   url = aws_eks_cluster.main.identity[0].oidc[0].issuer
 }
@@ -142,4 +137,78 @@ resource "aws_iam_openid_connect_provider" "oidc" {
   tags = {
     Name = "${var.cluster_name}-oidc"
   }
+}
+
+# IRSA Role & Policies for stenox-backend-sa
+
+
+data "aws_caller_identity" "current" {}
+
+resource "aws_iam_role" "backend_irsa_role" {
+  name = "${var.cluster_name}-backend-irsa-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.oidc.arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "${replace(aws_iam_openid_connect_provider.oidc.url, "https://", "")}:sub" = "system:serviceaccount:dev:stenox-backend-sa",
+            "${replace(aws_iam_openid_connect_provider.oidc.url, "https://", "")}:aud" = "sts.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.cluster_name}-backend-irsa-role"
+  }
+}
+
+resource "aws_iam_policy" "backend_policy" {
+  name        = "${var.cluster_name}-backend-permissions"
+  description = "Allows backend pod to access Secrets Manager and S3 media bucket"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # Secrets Manager permissions
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:stenox/backend/*"
+      },
+      # S3 Media Bucket permissions
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject"
+        ]
+        Resource = "${var.s3_bucket_arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket"
+        ]
+        Resource = var.s3_bucket_arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "backend_irsa_attach" {
+  role       = aws_iam_role.backend_irsa_role.name
+  policy_arn = aws_iam_policy.backend_policy.arn
 }

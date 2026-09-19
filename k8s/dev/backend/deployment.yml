@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stenox-backend-deployment
+  namespace: dev
+  labels:
+    app: stenox-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stenox-backend
+  template:
+    metadata:
+      labels:
+        app: stenox-backend
+    spec:
+      serviceAccountName: stenox-backend-sa
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.36
+        envFrom:
+        - secretRef:
+            name: stenox-credentials
+        command:
+        - sh
+        - -c
+        - |
+          # Extracts host and port dynamically from DATABASE_URL
+          DB_HOST=$(echo $DATABASE_URL | sed -E 's|.*@([^:/]+).*|\1|')
+          DB_PORT=$(echo $DATABASE_URL | sed -nE 's|.*:([0-9]+)/.*|\1|p')
+          DB_PORT=${DB_PORT:-5432}
+          echo "Waiting for database at $DB_HOST:$DB_PORT..."
+          until nc -z -v -w3 "$DB_HOST" "$DB_PORT"; do
+            echo "Waiting for database connection..."
+            sleep 2
+          done
+      containers:
+      - name: stenox-container
+        image: backend-image
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+
+        envFrom:
+        - secretRef:
+            name: stenox-credentials
+
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "70Mi"
+          limits:
+            cpu: "150m"
+            memory: "128Mi"

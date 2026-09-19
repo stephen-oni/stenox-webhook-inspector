@@ -1,7 +1,8 @@
 import axios from 'axios';
 
-// Defaults to FastAPI port 8000
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Empty string allows Axios to use relative paths (e.g., /api/auth/register)
+// routed directly through the frontend Nginx reverse proxy
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -9,7 +10,7 @@ const api = axios.create({
 
 // Attach JWT bearer token to outbound requests if present
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('stenox_token');
+  const token = localStorage.getItem('stenox_token') || localStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
