@@ -12,7 +12,7 @@ A production-grade, highly available cloud-native webhook inspection platform an
 
 ## Architectural Decisions & Highlights
 
-* **Zero-Touch Bootstrap**: Cluster initialization—including application namespaces, IAM Roles for Service Accounts (IRSA), Ingress-NGINX controllers, External-Secrets operators, and Argo CD GitOps reconcilers—is managed dynamically via Terraform. No manual `kubectl apply` commands are used to prepare the environment.
+* **Zero-Touch Bootstrap**: Cluster initialization including application namespaces, IAM Roles for Service Accounts (IRSA), Ingress-NGINX controllers, External-Secrets operators, and Argo CD GitOps reconcilers is managed dynamically via Terraform. No manual `kubectl apply` commands are used to prepare the environment.
 * **Ambient Pod Security via IRSA**: No AWS access keys or static credentials reside inside containers or environment variables. The `stenox-backend-sa` Kubernetes ServiceAccount leverages AWS OIDC federation to acquire scoped temporary credentials for streaming binary assets directly to private Amazon S3 buckets.
 * **Keyless Workflows via GitHub OIDC**: CI/CD pipelines communicate with AWS strictly via dynamic OpenID Connect (OIDC) federated role assumption, eliminating long-lived static AWS access keys entirely from repository storage.
 * **Separation of Secrets Lifecycle**: Sensitive database passwords and application keys are isolated from Git and Terraform state. Developers seed AWS Secrets Manager once, and the in-cluster External Secrets Operator syncs those key-value pairs into native Kubernetes `Secret` resources.
